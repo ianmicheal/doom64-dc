@@ -17,9 +17,13 @@
 #define s8 int8_t
 
 #include "i_main.h"
+
+#define STORAGE_PREFIX "/cd"
+
 #define MAX_CACHED_SPRITES 256
 
-#define VERTBUF_SIZE (768*1024)
+#define OP_VERTBUF_SIZE (128*1024)
+#define TR_VERTBUF_SIZE ((768+128)*1024*2)
 extern unsigned char lightcurve[256];
 extern unsigned char lightmax[256];
 #define get_color_argb1555(rrr,ggg,bbb,aaa) ((uint16_t)(((aaa&1)<<15) | (((rrr>>3)&0x1f)<<10) | (((ggg>>3)&0x1f)<<5) | ((bbb>>3)&0x1f)))
@@ -36,6 +40,8 @@ extern unsigned char lightmax[256];
 #define D64_PVR_REPACK_COLOR(color) (((color >> 8) & 0x00ffffff) | (color << 24))
 #define D64_PVR_REPACK_COLOR_ALPHA(color,a) (((color >> 8) & 0x00ffffff) | (a << 24))
 #define D64_PVR_PACK_COLOR(a,r,g,b) ((a << 24) | (r << 16) | (g << 8) | b)
+
+#define NO_DITHER 0
 
 #if 1
 #define REAL_SCREEN_WD 640
@@ -56,6 +62,7 @@ extern unsigned char lightmax[256];
 
 extern const float inv64;
 extern const float inv255;
+extern const float halfinv1024;
 extern const float inv1024;
 extern const float inv65536;
 
@@ -159,7 +166,7 @@ void init_all_sounds(void);
 void P_RefreshBrightness(void);
 void P_RefreshVideo(void);
 
-typedef float   Matrix[4][4];
+typedef float __attribute__((aligned(32))) Matrix[4][4];
 
 static inline void guMtxIdentF(Matrix mf)
 {
@@ -259,7 +266,7 @@ int D_abs(int v);
 //fixed_t finesine(int angle);
 //fixed_t finecosine(int angle);
 
-extern	fixed_t		finesine[5*FINEANGLES/4];
+extern	fixed_t		__attribute__((aligned(64))) finesine[5*FINEANGLES/4];
 extern	fixed_t		*finecosine;
 
 //angle_t tantoangle(int tan);
@@ -1181,9 +1188,9 @@ enum VID_MSG {
 extern u32 vid_side;       // 800A5248
 
 extern boolean disabledrawing; // 8005A720
-extern s32 vsync;              // 8005A724
-extern s32 drawsync2;          // 8005A728
-extern s32 drawsync1;          // 8005A72C
+extern volatile s32 vsync;              // 8005A724
+extern volatile s32 drawsync2;          // 8005A728
+extern volatile s32 drawsync1;          // 8005A72C
 extern u32 NextFrameIdx;       // 8005A730
 extern s32 FilesUsed;          // 8005A740
 

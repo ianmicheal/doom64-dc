@@ -230,7 +230,12 @@ void AM_Control (player_t *player) // 800004F4
 = Draws the current frame to workingscreen
 ==================
 */
-extern Matrix __attribute__((aligned(32))) R_ProjectionMatrix;
+extern Matrix R_ProjectionMatrix;
+
+float empty_table[129] = {0};
+static Matrix RotX;
+static Matrix RotY;
+static Matrix ThenTrans;
 
 void AM_Drawer (void) // 800009AC
 {
@@ -264,6 +269,8 @@ void AM_Drawer (void) // 800009AC
 	}
 
 	pvr_set_bg_color(0,0,0);
+	pvr_fog_table_color(0.0f,0.0f,0.0f,0.0f);
+	pvr_fog_table_custom(empty_table);
 
 	p = &players[0];
 
@@ -289,13 +296,8 @@ void AM_Drawer (void) // 800009AC
 	s = finesine[angle];
 	c = finecosine[angle];
 
-	Matrix __attribute__((aligned(32))) RotX;
 	DoomRotateX(RotX, -1.0, 0.0); // -pi/2 rad
-
-	Matrix __attribute__((aligned(32))) RotY;
 	DoomRotateY(RotY, (float)s/65536.0f, (float)c/65536.0f);
-
-	Matrix __attribute__((aligned(32))) ThenTrans;
 	DoomTranslate(ThenTrans, -((float)xpos/65536.0f), -((float)scale/65536.0f), (float)ypos/65536.0f);
 
 	mat_load(&R_ProjectionMatrix);
@@ -444,8 +446,7 @@ static boolean AM_DrawSubsector(player_t *player, int bspnum)
 
 	R_RenderPlane(&leafs[sub->leaf], sub->numverts, 0,
 				  textures[sec->floorpic], 0, 0,
-				  lights[sec->colors[1]].rgba, 0, sec->lightlevel, 255);
-
+				  lights[sec->colors[1]].rgba, 0, 0, 255); // no dynamic light
 	return true;
 }
 /*
@@ -550,7 +551,7 @@ void AM_DrawLineThings(fixed_t x, fixed_t y, angle_t angle, int color) {
 	verts[3].flags = PVR_CMD_VERTEX_EOL;
 	verts[7].flags = PVR_CMD_VERTEX_EOL;
 	verts[11].flags = PVR_CMD_VERTEX_EOL;
-	pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
+	pvr_poly_cxt_col(&cxt, PVR_LIST_TR_POLY);
 	pvr_poly_compile(&hdr, &cxt);
 
 	dVTX[0] = &(dT1.dVerts[0]);
@@ -588,7 +589,7 @@ void AM_DrawLineThings(fixed_t x, fixed_t y, angle_t angle, int color) {
 	int lvert = 0;
 	int lhori = 0;
 
-	pvr_list_prim(PVR_LIST_OP_POLY, &hdr, sizeof(hdr));
+	pvr_list_prim(PVR_LIST_TR_POLY, &hdr, sizeof(hdr));
 	{
 		int x1,y1,x2,y2;
 
@@ -797,7 +798,9 @@ void AM_DrawLineThings(fixed_t x, fixed_t y, angle_t angle, int color) {
 			float dx = x2 - x1;
 			float dy = y2 - y1;
 
-			float hlw_invmag = frsqrt((dx*dx) + (dy*dy)) * (LINEWIDTH*0.5f); float nx = -dy * hlw_invmag; float ny = dx * hlw_invmag;
+			float hlw_invmag = frsqrt((dx*dx) + (dy*dy)) * (LINEWIDTH*0.5f);
+			float nx = -dy * hlw_invmag;
+			float ny = dx * hlw_invmag;
 
 			vert->x = x1 + nx;
 			vert->y = y1 + ny;
@@ -857,7 +860,7 @@ void AM_DrawLineThings(fixed_t x, fixed_t y, angle_t angle, int color) {
 		x2 = v1->v.x;
 		y2 = v1->v.y;
 
-		pvr_list_prim(PVR_LIST_OP_POLY, &hdr, sizeof(hdr));
+		pvr_list_prim(PVR_LIST_TR_POLY, &hdr, sizeof(hdr));
 		if (lhori) {
 			x1 -= (LINEWIDTH*0.5f);
 			x2 -= (LINEWIDTH*0.5f);
@@ -937,7 +940,7 @@ void AM_DrawLineThings(fixed_t x, fixed_t y, angle_t angle, int color) {
 			vert++;
 		}
 	}
-	pvr_list_prim(PVR_LIST_OP_POLY, &verts, sizeof(pvr_vertex_t)*12);
+	pvr_list_prim(PVR_LIST_TR_POLY, &verts, sizeof(pvr_vertex_t)*12);
 }
 
 void AM_DrawLine(player_t *player, fixed_t bbox[static 4])
@@ -946,7 +949,7 @@ void AM_DrawLine(player_t *player, fixed_t bbox[static 4])
 	int i, color;
 	pvr_poly_hdr_t hdr;
 	pvr_poly_cxt_t cxt;
-	pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
+	pvr_poly_cxt_col(&cxt, PVR_LIST_TR_POLY);
 	pvr_poly_compile(&hdr, &cxt);
 
 	dVTX[0] = &(dT1.dVerts[0]);
@@ -1044,7 +1047,7 @@ void AM_DrawLine(player_t *player, fixed_t bbox[static 4])
 				x2 = v1->v.x;
 				y2 = v1->v.y;
 
-				pvr_list_prim(PVR_LIST_OP_POLY, &hdr, sizeof(hdr));
+				pvr_list_prim(PVR_LIST_TR_POLY, &hdr, sizeof(hdr));
 				if (lhori) {
 					x1 -= (LINEWIDTH*0.5f);
 					x2 -= (LINEWIDTH*0.5f);
@@ -1123,7 +1126,7 @@ void AM_DrawLine(player_t *player, fixed_t bbox[static 4])
 					vert->z = v1->v.z;
 					vert++;
 				}
-				pvr_list_prim(PVR_LIST_OP_POLY, &verts, sizeof(pvr_vertex_t)*4);
+				pvr_list_prim(PVR_LIST_TR_POLY, &verts, sizeof(pvr_vertex_t)*4);
 			}
 		}
 	}

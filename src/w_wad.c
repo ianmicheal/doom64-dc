@@ -61,12 +61,14 @@ void *pnon_enemy;
 pvr_ptr_t pvr_non_enemy;
 pvr_poly_cxt_t pvr_sprite_cxt;
 pvr_poly_hdr_t pvr_sprite_hdr;
+pvr_poly_hdr_t pvr_sprite_hdr_nofilter;
 
-const char *fnpre = "/cd";
+// see doomdef.h
+const char *fnpre = STORAGE_PREFIX;
 
 char fnbuf[256];
-extern uint8_t __attribute__((aligned(32))) op_buf[VERTBUF_SIZE];
-extern uint8_t __attribute__((aligned(32))) tr_buf[VERTBUF_SIZE];
+extern uint8_t __attribute__((aligned(32))) op_buf[OP_VERTBUF_SIZE];
+extern uint8_t __attribute__((aligned(32))) tr_buf[TR_VERTBUF_SIZE];
 
 uint16_t *printtex;
 pvr_ptr_t dlstex;
@@ -226,8 +228,8 @@ void W_DrawLoadScreen(char *what, int current, int total) {
 
 		vid_waitvbl();
 		pvr_scene_begin();
-		pvr_set_vertbuf(PVR_LIST_OP_POLY, op_buf, VERTBUF_SIZE);
-		pvr_set_vertbuf(PVR_LIST_TR_POLY, tr_buf, VERTBUF_SIZE);
+		pvr_set_vertbuf(PVR_LIST_OP_POLY, op_buf, OP_VERTBUF_SIZE);
+		pvr_set_vertbuf(PVR_LIST_TR_POLY, tr_buf, TR_VERTBUF_SIZE);
 
 		pvr_list_prim(PVR_LIST_OP_POLY, &load_hdr, sizeof(pvr_poly_hdr_t));
 		pvr_list_prim(PVR_LIST_OP_POLY, &txtverts, sizeof(txtverts));	
@@ -251,16 +253,16 @@ void W_Init (void)
 	short *pal1;
 	short *pal2;
 
-	W_DrawLoadScreen("Palettes", 0, 2);
-	timer_spin_delay_us(30000);
+	W_DrawLoadScreen("Palettes", 0, 100);
+	timer_spin_sleep(15);
 	sprintf(fnbuf, "%s/doom64monster.pal", fnpre);
 	fs_load(fnbuf, (void **)&pal1);
-	W_DrawLoadScreen("Palettes", 1, 2);
-	timer_spin_delay_us(30000);
+	W_DrawLoadScreen("Palettes", 50, 100);
+	timer_spin_sleep(15);
 	sprintf(fnbuf, "%s/doom64nonenemy.pal", fnpre);
 	fs_load(fnbuf, (void **)&pal2);
-	W_DrawLoadScreen("Palettes", 2, 2);
-	timer_spin_delay_us(30000);
+	W_DrawLoadScreen("Palettes", 100, 100);
+	timer_spin_sleep(15);
 
 	pvr_set_pal_format(PVR_PAL_ARGB1555);
 	for(int i=1;i<256;i++) {
@@ -317,12 +319,30 @@ void W_Init (void)
 	pvr_set_pal_entry(0,0);
 	pvr_set_pal_entry(256,0);
 
+	// all non-enemy sprites are in an uncompressed, pretwiddled 8bpp 1024^2 sheet texture
+	W_DrawLoadScreen("Item Tex", 0, 100);
+	timer_spin_sleep(15);
+	sprintf(fnbuf, "%s/vq/non_enemy.tex", fnpre);
+	size_t vqsize = fs_load(fnbuf, &pnon_enemy);
+	W_DrawLoadScreen("Item Tex", 50, 100);
+	timer_spin_sleep(15);
+	dbgio_printf("non_enemy loaded size is %d\n", vqsize);
+	pvr_non_enemy = pvr_mem_malloc(vqsize);
+	pvr_txr_load(pnon_enemy, pvr_non_enemy, vqsize);
+	free(pnon_enemy);
+	W_DrawLoadScreen("Item Tex", 100, 100);
+	timer_spin_sleep(15);
+	dbgio_printf("PVR mem free after non_enemy: %lu\n", pvr_mem_available());
+
 	// doom64 wad
 	dbgio_printf("W_Init: Loading IWAD into RAM...\n");
 
 	wadfileptr = (wadinfo_t *)Z_Alloc(sizeof(wadinfo_t), PU_STATIC, NULL);
 	sprintf(fnbuf, "%s/pow2.wad", fnpre); // doom64.wad
 	wad_file = fs_open(fnbuf, O_RDONLY);
+	if (-1 == wad_file) {
+		I_Error("Could not open %s for reading.\n", fnbuf);
+	}
 
 	size_t full_wad_size = fs_seek(wad_file, 0, SEEK_END);
 	size_t wad_rem_size = full_wad_size;
@@ -343,7 +363,7 @@ void W_Init (void)
 	fs_close(wad_file);
 
 	memcpy((void*)wadfileptr, fullwad + 0, sizeof(wadinfo_t));
-	if (D_strncasecmp(wadfileptr->identification, "IWAD", 4))
+	if (D_strncasecmp(&wadfileptr->identification[1], "WAD", 3))
 		I_Error("W_Init: invalid main IWAD id");
 	numlumps = (wadfileptr->numlumps);
 	lumpinfo = (lumpinfo_t *) Z_Malloc(numlumps * sizeof(lumpinfo_t), PU_STATIC, 0);
@@ -359,7 +379,9 @@ void W_Init (void)
 	s2_wadfileptr = (wadinfo_t *)Z_Alloc(sizeof(wadinfo_t), PU_STATIC, NULL);
 	sprintf(fnbuf, "%s/alt.wad", fnpre);
 	s2_file = fs_open(fnbuf, O_RDONLY);
-
+	if (-1 == s2_file) {
+		I_Error("Could not open %s for reading.\n", fnbuf);
+	}
 	size_t alt_wad_size = fs_seek(s2_file, 0, SEEK_END);
 	wad_rem_size = alt_wad_size;
 	s2wad = malloc(wad_rem_size);
@@ -389,25 +411,18 @@ void W_Init (void)
 	D_memset(s2_lumpcache, 0, s2_numlumps * sizeof(lumpcache_t));
 	Z_Free(s2_wadfileptr);
 
-	// all non-enemy sprites are in an uncompressed, pretwiddled 8bpp 1024^2 sheet texture
-	W_DrawLoadScreen("Item Tex", 0, 1);
-	timer_spin_delay_us(30000);
-	sprintf(fnbuf, "%s/vq/non_enemy.tex", fnpre);
-	size_t vqsize = fs_load(fnbuf, &pnon_enemy);
-	dbgio_printf("non_enemy loaded size is %d\n", vqsize);
-	pvr_non_enemy = pvr_mem_malloc(vqsize);
-	pvr_txr_load(pnon_enemy, pvr_non_enemy, vqsize);
-	free(pnon_enemy);
-	W_DrawLoadScreen("Item Tex", 1, 1);
-	timer_spin_delay_us(30000);
-	dbgio_printf("PVR mem free after non_enemy: %lu\n", pvr_mem_available());
-
 	// common shared poly context/header used for all non-enemy sprites
 	pvr_poly_cxt_txr(&pvr_sprite_cxt, PVR_LIST_TR_POLY, PVR_TXRFMT_PAL8BPP | PVR_TXRFMT_8BPP_PAL(1) | PVR_TXRFMT_TWIDDLED, 1024, 1024, pvr_non_enemy, PVR_FILTER_BILINEAR);
 	pvr_sprite_cxt.gen.specular = PVR_SPECULAR_ENABLE;
 	pvr_sprite_cxt.gen.fog_type = PVR_FOG_TABLE;
 	pvr_sprite_cxt.gen.fog_type2 = PVR_FOG_TABLE;
 	pvr_poly_compile(&pvr_sprite_hdr, &pvr_sprite_cxt);
+	
+	pvr_poly_cxt_txr(&pvr_sprite_cxt, PVR_LIST_TR_POLY, PVR_TXRFMT_PAL8BPP | PVR_TXRFMT_8BPP_PAL(1) | PVR_TXRFMT_TWIDDLED, 1024, 1024, pvr_non_enemy, PVR_FILTER_NONE);
+	pvr_sprite_cxt.gen.specular = PVR_SPECULAR_ENABLE;
+	pvr_sprite_cxt.gen.fog_type = PVR_FOG_TABLE;
+	pvr_sprite_cxt.gen.fog_type2 = PVR_FOG_TABLE;
+	pvr_poly_compile(&pvr_sprite_hdr_nofilter, &pvr_sprite_cxt);	
 }
 
 static char retname[9];
@@ -832,10 +847,9 @@ MAP LUMP BASED ROUTINES
 = Exclusive Psx Doom / Doom64
 ====================
 */
-
 void W_OpenMapWad(int mapnum) // 8002C5B0
 {
-	int lump, size, infotableofs;
+	int infotableofs;
 	char name [8];
 
     name[0] = 'M';
@@ -844,14 +858,27 @@ void W_OpenMapWad(int mapnum) // 8002C5B0
     name[3] = '0' + (char)(mapnum / 10);
     name[4] = '0' + (char)(mapnum % 10);
     name[5] = 0;
-
-    lump = W_GetNumForName(name);
-    size = W_LumpLength(lump);
-
-    mapfileptr = Z_Alloc(size, PU_STATIC, NULL);
-
-    W_ReadLump(lump, mapfileptr, dec_d64);
-
+#if 0
+	if ((name[3] == '0') && ((name[4] == '1') || (name[4] == '2') || (name[4] == '3'))) {
+		sprintf(fnbuf, "%s/map%c%c.wad", fnpre, name[3], name[4]);
+		file_t mapfd = fs_open(fnbuf, O_RDONLY);
+		if(-1 == mapfd) {
+			I_Error("Could not open %s for reading.\n", fnbuf);
+		}
+		size_t mapsize = fs_seek(mapfd, 0, SEEK_END);
+		fs_seek(mapfd, 0, SEEK_SET);
+		mapfileptr = Z_Alloc(mapsize, PU_STATIC, NULL);
+		fs_read(mapfd, mapfileptr, mapsize);
+		fs_close(mapfd);
+	} else 
+#endif	
+	{
+		int lump, size;
+		lump = W_GetNumForName(name);
+		size = W_LumpLength(lump);
+		mapfileptr = Z_Alloc(size, PU_STATIC, NULL);
+		W_ReadLump(lump, mapfileptr, dec_d64);
+	}
     mapnumlumps = (((wadinfo_t*)mapfileptr)->numlumps);
     infotableofs = (((wadinfo_t*)mapfileptr)->infotableofs);
 

@@ -13,7 +13,8 @@ extern int VideoFilter;
 extern pvr_poly_cxt_t **tcxt;
 extern void **tsptrs;
 
-extern pvr_poly_hdr_t **headers_for_sprites;
+extern pvr_poly_hdr_t pvr_sprite_hdr;
+extern pvr_poly_hdr_t pvr_sprite_hdr_nofilter;
 
 extern float *all_u;
 extern float *all_v;
@@ -102,6 +103,7 @@ void clip_edge(d64Vertex_t *v1, d64Vertex_t *v2, d64Vertex_t *out)
 	out->v.x = invt * v1->v.x + t * v2->v.x;
 	out->v.y = invt * v1->v.y + t * v2->v.y;
 	out->v.z = invt * v1->v.z + t * v2->v.z;
+
 	out->v.u = invt * v1->v.u + t * v2->v.u;
 	out->v.v = invt * v1->v.v + t * v2->v.v;
 
@@ -111,9 +113,9 @@ void clip_edge(d64Vertex_t *v1, d64Vertex_t *v2, d64Vertex_t *out)
 
 uint32_t lighted_color(uint32_t c, int ll)
 {
-	uint8_t r = (uint8_t)(((int)(256 + ((int)UNPACK_R(c)))*(int)ll) >> 9);
-	uint8_t g = (uint8_t)(((int)(256 + ((int)UNPACK_G(c)))*(int)ll) >> 9);
-	uint8_t b = (uint8_t)(((int)(256 + ((int)UNPACK_B(c)))*(int)ll) >> 9);
+	uint8_t r = (uint8_t)((UNPACK_R(c)*ll)>>8);//(((int)(256 + ((int)UNPACK_R(c)))*(int)ll) >> 9);
+	uint8_t g = (uint8_t)((UNPACK_G(c)*ll)>>8);//(((int)(256 + ((int)UNPACK_G(c)))*(int)ll) >> 9);
+	uint8_t b = (uint8_t)((UNPACK_B(c)*ll)>>8);//(((int)(256 + ((int)UNPACK_B(c)))*(int)ll) >> 9);
 	uint8_t a = UNPACK_A(c);
 	return D64_PVR_PACK_COLOR(a,r,g,b);
 }
@@ -244,10 +246,10 @@ void clip_triangle(d64Triangle_t *triangle, pvr_poly_hdr_t *hdr, int lightlevel,
 	/* dVerts[0] and dVerts[1] visible */
 	case 3: {
 		/* out 1 */
-		clip_edge(&triangle->dVerts[2], &triangle->dVerts[0], &triangle->spare[0]);
+		clip_edge(&triangle->dVerts[1], &triangle->dVerts[2], &triangle->spare[0]);
 
 		/* out 2 */
-		clip_edge(&triangle->dVerts[1], &triangle->dVerts[2], &triangle->spare[1]);
+		clip_edge(&triangle->dVerts[2], &triangle->dVerts[0], &triangle->spare[1]);
 
 		perspdiv(&triangle->dVerts[0]);
 		perspdiv(&triangle->dVerts[1]);
@@ -259,8 +261,6 @@ void clip_triangle(d64Triangle_t *triangle, pvr_poly_hdr_t *hdr, int lightlevel,
 
 		pvr_list_prim(list, hdr, sizeof(pvr_poly_hdr_t));
 		pvr_list_prim(list, &triangle->dVerts[0].v, sizeof(pvr_vertex_t));
-		pvr_list_prim(list, &triangle->dVerts[1].v, sizeof(pvr_vertex_t));
-		pvr_list_prim(list, &triangle->spare[0].v, sizeof(pvr_vertex_t));
 		pvr_list_prim(list, &triangle->dVerts[1].v, sizeof(pvr_vertex_t));
 		pvr_list_prim(list, &triangle->spare[1].v, sizeof(pvr_vertex_t));
 		pvr_list_prim(list, &triangle->spare[0].v, sizeof(pvr_vertex_t));
@@ -279,20 +279,15 @@ void clip_triangle(d64Triangle_t *triangle, pvr_poly_hdr_t *hdr, int lightlevel,
 		perspdiv(&triangle->spare[0]);
 		perspdiv(&triangle->spare[1]);
 
+		triangle->dVerts[2].v.flags = PVR_CMD_VERTEX;
 		triangle->spare[0].v.flags = PVR_CMD_VERTEX;
-		triangle->spare[1].v.flags = PVR_CMD_VERTEX;
+		triangle->spare[1].v.flags = PVR_CMD_VERTEX_EOL;
 
 		pvr_list_prim(list, hdr, sizeof(pvr_poly_hdr_t));
 		pvr_list_prim(list, &triangle->dVerts[0].v, sizeof(pvr_vertex_t));
 		pvr_list_prim(list, &triangle->spare[0].v, sizeof(pvr_vertex_t));
 		pvr_list_prim(list, &triangle->dVerts[2].v, sizeof(pvr_vertex_t));
-
-		triangle->dVerts[2].v.flags = PVR_CMD_VERTEX;
-		triangle->spare[0].v.flags = PVR_CMD_VERTEX_EOL;
-
 		pvr_list_prim(list, &triangle->spare[1].v, sizeof(pvr_vertex_t));
-		pvr_list_prim(list, &triangle->dVerts[2].v, sizeof(pvr_vertex_t));
-		pvr_list_prim(list, &triangle->spare[0].v, sizeof(pvr_vertex_t));
 	}
 	break;
 	/* dVerts[1] and dVerts[2] visible */
@@ -306,17 +301,15 @@ void clip_triangle(d64Triangle_t *triangle, pvr_poly_hdr_t *hdr, int lightlevel,
 		perspdiv(&triangle->spare[0]);
 		perspdiv(&triangle->spare[1]);
 
-		triangle->dVerts[2].v.flags = PVR_CMD_VERTEX;
+		triangle->dVerts[2].v.flags = PVR_CMD_VERTEX_EOL;
 		triangle->spare[0].v.flags = PVR_CMD_VERTEX;
-		triangle->spare[1].v.flags = PVR_CMD_VERTEX_EOL;
+		triangle->spare[1].v.flags = PVR_CMD_VERTEX;
 
 		pvr_list_prim(list, hdr, sizeof(pvr_poly_hdr_t));
 		pvr_list_prim(list, &triangle->spare[0].v, sizeof(pvr_vertex_t));
 		pvr_list_prim(list, &triangle->dVerts[1].v, sizeof(pvr_vertex_t));
 		pvr_list_prim(list, &triangle->spare[1].v, sizeof(pvr_vertex_t));
-		pvr_list_prim(list, &triangle->dVerts[1].v, sizeof(pvr_vertex_t));
 		pvr_list_prim(list, &triangle->dVerts[2].v, sizeof(pvr_vertex_t));
-		pvr_list_prim(list, &triangle->spare[1].v, sizeof(pvr_vertex_t));
 	}
 	break;
 	}
@@ -717,8 +710,8 @@ void R_WallPrep(seg_t *seg)
 
 #define INTEGER_VERT 0
 
-int last_width = 64;
-int last_height = 64;
+float last_width_inv = 1.0f / 64.0f;
+float last_height_inv = 1.0f / 64.0f;
 
 void P_CachePvrTexture(int i, int tag);
 
@@ -737,7 +730,7 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight, int bottomH
 	
 	if (texture != 16) {
 		if (flags & ML_HMIRROR) {
-			cms = 1;
+			cms = 2;
 		} else {
 			cms = 0;
 		}
@@ -750,14 +743,12 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight, int bottomH
 
 		if ((texture != globallump) || (globalcm != (cms | cmt))) {
 			data = W_CacheLumpNum(texture >> 4, PU_CACHE, dec_d64);
-			
-			P_CachePvrTexture(texnum, PU_CACHE);
-
 			wshift = SwapShort(((textureN64_t*)data)->wshift);
 			hshift = SwapShort(((textureN64_t*)data)->hshift);
+			last_width_inv = 1.0f / (float)(1 << wshift);
+			last_height_inv = 1.0f / (float)(1 << hshift);
 
-			last_width = 1 << wshift;
-			last_height = 1 << hshift;
+			P_CachePvrTexture(texnum, PU_CACHE);
 
 			// cms is S/H mirror
 			// cmt is T/V mirror
@@ -807,10 +798,10 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight, int bottomH
 		short stu2 = stu1 + (seg->length >> 4);
 		short stv1 = topOffset;
 		short stv2 = bottomOffset;
-		float tu1 = (float)stu1 / (float)last_width;
-		float tu2 = (float)stu2 / (float)last_width;
-		float tv1 = (float)stv1 / (float)last_height;
-		float tv2 = (float)stv2 / (float)last_height;
+		float tu1 = (float)stu1 * last_width_inv;
+		float tu2 = (float)stu2 * last_width_inv;
+		float tv1 = (float)stv1 * last_height_inv;
+		float tv2 = (float)stv2 * last_height_inv;
 
 		dVTX[0] = &(dT1.dVerts[0]);
 		dVTX[1] = &(dT1.dVerts[1]);
@@ -844,8 +835,8 @@ void R_RenderWall(seg_t *seg, int flags, int texture, int topHeight, int bottomH
 	}
 }
 
-int last_sw;
-int last_sh;
+float last_sw_inv_x32;
+float last_sh_inv_x32;
 
 void R_RenderSwitch(seg_t *seg, int texture, int topOffset, int color)
 {
@@ -864,8 +855,8 @@ void R_RenderSwitch(seg_t *seg, int texture, int topOffset, int color)
 		wshift = SwapShort(((textureN64_t*)data)->wshift);
 		hshift = SwapShort(((textureN64_t*)data)->hshift);
 
-		last_sw = 1 << wshift;
-		last_sh = 1 << hshift;
+		last_sw_inv_x32 = 32.0f / (float)(1 << wshift);
+		last_sh_inv_x32 = 32.0f / (float)(1 << hshift);
 
 		if (!VideoFilter) {
 			tcxt[texture][0].txr.filter = PVR_FILTER_BILINEAR;
@@ -910,9 +901,9 @@ void R_RenderSwitch(seg_t *seg, int texture, int topOffset, int color)
 	float z2 = (float)((-y) - (sin << 3) + cos) * inv65536;
 #endif
 	float tu1 = 0.0f;
-	float tu2 = 32.0f / (float)last_sw;
+	float tu2 = last_sw_inv_x32;
 	float tv1 = 0.0f;
-	float tv2 = 32.0f / (float)last_sh;
+	float tv2 = last_sh_inv_x32;
 
 	dVTX[0] = &(dT1.dVerts[0]);
 	dVTX[1] = &(dT1.dVerts[1]);
@@ -1329,7 +1320,12 @@ void R_RenderThings(subsector_t *sub)
 					dVTX[0]->v.u = dVTX[3]->v.u = all_u[lump] + (((float)spos - 0.5f)*inv1024);
 				}
 
-				theheader = headers_for_sprites[lump];
+				if (!VideoFilter) {
+					theheader = &pvr_sprite_hdr;
+				} else {
+					theheader = &pvr_sprite_hdr_nofilter;
+				}
+
 				dVTX[0]->v.v = dVTX[1]->v.v = all_v[lump] + halfinv1024;
 				dVTX[3]->v.v = dVTX[2]->v.v = all_v[lump] + (((float)height-0.5f)*inv1024);
 			} else {
@@ -1664,8 +1660,8 @@ void R_RenderLaser(mobj_t *thing)
 	memcpy(&(dT2.dVerts[1]), &laserverts[4], sizeof(d64Vertex_t));
 	memcpy(&(dT2.dVerts[2]), &laserverts[5], sizeof(d64Vertex_t));
 
-	clip_triangle(&dT1, &hdr, 255, PVR_LIST_TR_POLY, 0);
-	clip_triangle(&dT2, &hdr, 255, PVR_LIST_TR_POLY, 0);
+	clip_triangle(&dT1, &hdr, 255, PVR_LIST_OP_POLY, 0);
+	clip_triangle(&dT2, &hdr, 255, PVR_LIST_OP_POLY, 0);
 }
 
 void R_RenderPSprites(void)
@@ -1776,7 +1772,11 @@ void R_RenderPSprites(void)
 			vert->u = u2 - halfinv1024;
 			vert->v = v1 + halfinv1024;
 
-			pvr_list_prim(PVR_LIST_TR_POLY, headers_for_sprites[lump], sizeof(pvr_poly_hdr_t));
+			if (!VideoFilter) {
+				pvr_list_prim(PVR_LIST_TR_POLY, &pvr_sprite_hdr, sizeof(pvr_poly_hdr_t));
+			} else {
+				pvr_list_prim(PVR_LIST_TR_POLY, &pvr_sprite_hdr_nofilter, sizeof(pvr_poly_hdr_t));
+			}
 			pvr_list_prim(PVR_LIST_TR_POLY, &quad2, sizeof(quad2));
 		} // if ((state = psp->state) != 0)
 	} // for i < numsprites
